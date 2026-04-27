@@ -532,6 +532,23 @@ DesktopPluginComponent {
     function _toggleFold() {
         if (foldAnim.running)
             return;
+        // On Hyprland, the compositor animates layer-shell window resizes itself.
+        // Skip the in-plugin body animation so we don't double-animate (otherwise
+        // Hyprland's surface scale at the end of the fold visibly squishes the
+        // already-shrunk content). The wrapper height write triggers Hyprland's
+        // own resize animation, which provides the fold visual.
+        if (CompositorService.isHyprland) {
+            if (root.folded) {
+                const target = pluginData.unfoldedHeight ?? defaultHeight;
+                root.setData("folded", false);
+                _setAllPositionsHeight(target);
+            } else {
+                root.setData("unfoldedHeight", widgetHeight);
+                root.setData("folded", true);
+                _setAllPositionsHeight(titleBarHeight);
+            }
+            return;
+        }
         if (root.folded) {
             // Unfold: grow wrapper window first (instant), then animate body height up.
             const target = pluginData.unfoldedHeight ?? defaultHeight;
