@@ -505,6 +505,8 @@ DesktopPluginComponent {
             ToastService.showError("Failed to create sticky");
             return;
         }
+        // duplicateDesktopWidgetInstance appends " (Copy)" — strip it
+        SettingsData.updateDesktopWidgetInstance(newInst.id, { name: "DMS Stickies" });
         SettingsData.updateDesktopWidgetInstanceConfig(newInst.id, {
             folded: false
         });
@@ -539,7 +541,7 @@ DesktopPluginComponent {
     }
 
     function _restoreFromTrash(trashedId) {
-        const newInst = SettingsData.createDesktopWidgetInstance("dmsStickies", "Sticky", {
+        const newInst = SettingsData.createDesktopWidgetInstance("dmsStickies", "DMS Stickies", {
             accent: "yellow",
             folded: false,
             showOnOverlay: false
