@@ -28,6 +28,7 @@ DesktopPluginComponent {
     readonly property var accentPalette: Palette.get(accentName)
     readonly property bool pinned: pluginData.showOnOverlay ?? false
     readonly property bool folded: pluginData.folded ?? false
+    readonly property bool showToolbar: pluginData.showToolbar ?? true
 
     Rectangle {
         anchors.fill: parent
@@ -48,32 +49,37 @@ DesktopPluginComponent {
 
             onColorClicked: {
                 menu.visible = false;
+                trashPopover.visible = false;
                 colorPalette.visible = !colorPalette.visible;
             }
             onAddClicked: {
                 colorPalette.visible = false;
                 menu.visible = false;
+                trashPopover.visible = false;
                 root._newSticky();
             }
             onPinClicked: {
                 colorPalette.visible = false;
                 menu.visible = false;
+                trashPopover.visible = false;
                 root.setData("showOnOverlay", !root.pinned);
             }
             onFoldClicked: {
                 colorPalette.visible = false;
                 menu.visible = false;
+                trashPopover.visible = false;
                 root._toggleFold();
             }
             onMenuClicked: {
                 colorPalette.visible = false;
+                trashPopover.visible = false;
                 menu.visible = !menu.visible;
             }
         }
 
         Item {
             id: toolbar
-            visible: !root.folded
+            visible: !root.folded && root.showToolbar
             anchors.top: titleBar.bottom
             anchors.left: parent.left
             anchors.right: parent.right
@@ -236,9 +242,11 @@ DesktopPluginComponent {
 
                 Repeater {
                     model: [
+                        { icon: root.showToolbar ? "visibility_off" : "visibility", label: root.showToolbar ? "Hide toolbar" : "Show toolbar", action: "toggleToolbar" },
                         { icon: "content_copy", label: "Duplicate", action: "duplicate" },
                         { icon: "text_snippet", label: "Copy as Markdown", action: "copy" },
                         { icon: "restore_from_trash", label: "Restore from trash…", action: "restore" },
+                        { icon: "delete_sweep", label: "Empty trash", action: "emptyTrash" },
                         { icon: "delete", label: "Delete", action: "delete", danger: true }
                     ]
 
@@ -289,6 +297,138 @@ DesktopPluginComponent {
                 }
             }
         }
+
+        Rectangle {
+            id: trashPopover
+            visible: false
+            anchors.top: titleBar.bottom
+            anchors.right: parent.right
+            anchors.topMargin: Theme.spacingXS
+            anchors.rightMargin: Theme.spacingXS
+            width: 280
+            height: 220
+            color: Theme.surface
+            radius: Theme.cornerRadius
+            border.color: Theme.outlineVariant
+            border.width: 1
+            z: 11
+
+            property var trashItems: []
+
+            function refresh() {
+                const cmd = "cd '" + root.storageDir + "/trash' 2>/dev/null && for f in *.md; do "
+                          + "[ -f \"$f\" ] || continue; "
+                          + "line=$(head -n1 \"$f\" 2>/dev/null | head -c 80); "
+                          + "[ -z \"$line\" ] && line='(empty)'; "
+                          + "mtime=$(stat -c %Y \"$f\" 2>/dev/null); "
+                          + "printf '%s|%s|%s\\n' \"$f\" \"$mtime\" \"$line\"; "
+                          + "done | sort -t'|' -k2 -nr";
+                Proc.runCommand("dmsStickies.trash.list." + root.instanceId, ["sh", "-c", cmd], (stdout, exitCode) => {
+                    const raw = (stdout || "").trim();
+                    if (!raw) {
+                        trashItems = [];
+                        return;
+                    }
+                    const lines = raw.split("\n").filter(l => l.length > 0);
+                    const items = [];
+                    for (var i = 0; i < lines.length; i++) {
+                        const l = lines[i];
+                        const i1 = l.indexOf("|");
+                        const i2 = l.indexOf("|", i1 + 1);
+                        if (i1 < 0 || i2 < 0)
+                            continue;
+                        const fname = l.slice(0, i1);
+                        items.push({
+                            id: fname.replace(/\.md$/, ""),
+                            mtime: parseInt(l.slice(i1 + 1, i2), 10) || 0,
+                            preview: l.slice(i2 + 1) || "(empty)"
+                        });
+                    }
+                    trashItems = items;
+                }, 0);
+            }
+
+            Column {
+                id: trashHeader
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.spacingS
+                spacing: Theme.spacingXS
+
+                StyledText {
+                    text: "Restore from trash"
+                    font.pixelSize: Theme.fontSizeSmall
+                    font.weight: Font.Medium
+                    color: Theme.surfaceText
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 1
+                    color: Theme.outlineVariant
+                }
+            }
+
+            ListView {
+                id: trashList
+                anchors.top: trashHeader.bottom
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.margins: Theme.spacingS
+                anchors.topMargin: Theme.spacingXS
+                clip: true
+                spacing: 0
+                model: trashPopover.trashItems
+                boundsBehavior: Flickable.StopAtBounds
+                visible: trashPopover.trashItems.length > 0
+
+                delegate: Item {
+                    width: trashList.width
+                    height: 30
+
+                    readonly property var item: modelData
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 4
+                        color: rh.containsMouse ? Theme.surfaceContainerHigh : "transparent"
+                    }
+
+                    StyledText {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.spacingXS
+                        anchors.rightMargin: Theme.spacingXS
+                        text: parent.item.preview
+                        font.pixelSize: Theme.fontSizeSmall
+                        color: Theme.surfaceText
+                        elide: Text.ElideRight
+                        maximumLineCount: 1
+                    }
+
+                    MouseArea {
+                        id: rh
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedButtons: Qt.LeftButton
+                        onClicked: root._restoreFromTrash(parent.item.id)
+                    }
+                }
+            }
+
+            StyledText {
+                anchors.centerIn: parent
+                anchors.verticalCenterOffset: trashHeader.height / 2
+                visible: trashPopover.trashItems.length === 0
+                text: "Trash is empty"
+                font.pixelSize: Theme.fontSizeSmall
+                color: Theme.surfaceVariantText
+            }
+        }
     }
 
     function _applyAction(name) {
@@ -316,6 +456,9 @@ DesktopPluginComponent {
 
     function _handleMenuAction(action) {
         switch (action) {
+        case "toggleToolbar":
+            root.setData("showToolbar", !root.showToolbar);
+            break;
         case "duplicate":
             _newSticky(true);
             break;
@@ -323,7 +466,11 @@ DesktopPluginComponent {
             _copyMarkdown();
             break;
         case "restore":
-            _restoreLast();
+            trashPopover.refresh();
+            trashPopover.visible = true;
+            break;
+        case "emptyTrash":
+            _emptyTrash();
             break;
         case "delete":
             _deleteSticky();
@@ -391,7 +538,38 @@ DesktopPluginComponent {
         ToastService.showInfo("Sticky moved to trash");
     }
 
-    function _restoreLast() {
-        ToastService.showInfo("Trash restore UI coming in M6 — files are at " + storageDir + "/trash/");
+    function _restoreFromTrash(trashedId) {
+        const newInst = SettingsData.createDesktopWidgetInstance("dmsStickies", "Sticky", {
+            accent: "yellow",
+            folded: false,
+            showOnOverlay: false
+        });
+        if (!newInst) {
+            ToastService.showError("Failed to restore sticky");
+            return;
+        }
+        const src = storageDir + "/trash/" + trashedId + ".md";
+        const dst = storageDir + "/notes/" + newInst.id + ".md";
+        Quickshell.execDetached(["sh", "-c", "mkdir -p '" + storageDir + "/notes' && mv '" + src + "' '" + dst + "' 2>/dev/null"]);
+        ToastService.showInfo("Sticky restored");
+        Qt.callLater(() => trashPopover.refresh());
+    }
+
+    function _emptyTrash() {
+        const dir = storageDir + "/trash";
+        Proc.runCommand("dmsStickies.trash.empty." + instanceId, ["sh", "-c",
+            "[ -d '" + dir + "' ] || exit 0; "
+            + "n=$(find '" + dir + "' -maxdepth 1 -name '*.md' -type f | wc -l); "
+            + "rm -f '" + dir + "'/*.md 2>/dev/null; "
+            + "echo $n"
+        ], (stdout, exitCode) => {
+            const n = parseInt((stdout || "0").trim(), 10) || 0;
+            if (n === 0)
+                ToastService.showInfo("Trash is already empty");
+            else
+                ToastService.showInfo("Permanently deleted " + n + " sticky" + (n === 1 ? "" : "s"));
+            if (trashPopover.visible)
+                trashPopover.refresh();
+        }, 0);
     }
 }
