@@ -30,8 +30,59 @@ DesktopPluginComponent {
     readonly property bool folded: pluginData.folded ?? false
     readonly property bool showToolbar: pluginData.showToolbar ?? true
 
+    // Fold animation: animate the body Rectangle's height while the wrapper window stays put.
+    // The wrapper resize is triggered before unfold (so window grows first) or after fold
+    // completes (so window shrinks last). Empty area inside the wrapper renders transparent.
+    property bool _foldAnimating: false
+    property real _animatedBodyHeight: 0
+    readonly property real _bodyHeight: _foldAnimating ? _animatedBodyHeight : height
+
+    NumberAnimation {
+        id: foldAnim
+        target: root
+        property: "_animatedBodyHeight"
+        duration: 220
+        easing.type: Easing.InOutCubic
+
+        property bool _foldDirection: false
+
+        onFinished: {
+            if (_foldDirection) {
+                // Just finished folding — snap wrapper down. Keep _foldAnimating true
+                // until root.height actually matches the animated value, otherwise the
+                // body Rectangle's height binding flips to root.height (still full) for
+                // one frame and we get a regrow flash.
+                root.setData("folded", true);
+                root._setAllPositionsHeight(root.titleBarHeight);
+                foldReleaseFallback.restart();
+            } else {
+                // Unfold: wrapper grew before animation started, so root.height is
+                // already at the target. Safe to release immediately.
+                Qt.callLater(() => root._foldAnimating = false);
+            }
+        }
+    }
+
+    Timer {
+        id: foldReleaseFallback
+        interval: 150
+        onTriggered: root._foldAnimating = false
+    }
+
+    onHeightChanged: {
+        if (_foldAnimating && !foldAnim.running) {
+            if (Math.abs(height - _animatedBodyHeight) < 2) {
+                _foldAnimating = false;
+                foldReleaseFallback.stop();
+            }
+        }
+    }
+
     Rectangle {
-        anchors.fill: parent
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root._bodyHeight
         radius: Theme.cornerRadius
         color: root.accentPalette.bodyBg
         border.color: Qt.rgba(0, 0, 0, 0.18)
@@ -479,14 +530,29 @@ DesktopPluginComponent {
     }
 
     function _toggleFold() {
+        if (foldAnim.running)
+            return;
         if (root.folded) {
-            const h = pluginData.unfoldedHeight ?? defaultHeight;
+            // Unfold: grow wrapper window first (instant), then animate body height up.
+            const target = pluginData.unfoldedHeight ?? defaultHeight;
+            _animatedBodyHeight = titleBarHeight;
+            _foldAnimating = true;
             root.setData("folded", false);
-            _setAllPositionsHeight(h);
+            _setAllPositionsHeight(target);
+            foldAnim._foldDirection = false;
+            foldAnim.from = titleBarHeight;
+            foldAnim.to = target;
+            foldAnim.start();
         } else {
-            root.setData("unfoldedHeight", widgetHeight);
-            root.setData("folded", true);
-            _setAllPositionsHeight(titleBarHeight);
+            // Fold: animate body height down first, then snap wrapper window small.
+            const startH = widgetHeight;
+            root.setData("unfoldedHeight", startH);
+            _animatedBodyHeight = startH;
+            _foldAnimating = true;
+            foldAnim._foldDirection = true;
+            foldAnim.from = startH;
+            foldAnim.to = titleBarHeight;
+            foldAnim.start();
         }
     }
 
