@@ -1,0 +1,13 @@
+{
+    "id": "dmsStickies",
+    "name": "DMS Stickies",
+    "description": "Stickies-style desktop notes with markdown editing, pin-on-top, fold, and per-note accent colors.",
+    "version": "0.1.0",
+    "author": "kanghengliu",
+    "type": "desktop",
+    "capabilities": ["desktop-widget", "notes"],
+    "component": "./Sticky.qml",
+    "icon": "sticky_note_2",
+    "requires_dms": ">=1.4.5",
+    "permissions": ["settings_read", "settings_write"]
+}
