@@ -8,12 +8,16 @@ Item {
     property var accentPalette: ({})
     property bool pinned: false
     property bool folded: false
+    property string title: ""
 
     signal colorClicked
     signal addClicked
     signal pinClicked
     signal foldClicked
     signal menuClicked
+    signal dragStarted
+    signal dragMoved(real dx, real dy)
+    signal dragEnded
 
     height: 28
 
@@ -33,6 +37,36 @@ Item {
             height: 1
             color: Qt.rgba(0, 0, 0, 0.1)
         }
+    }
+
+    // Drag handle for left-click move. Sits below the swatch/buttons in z-order
+    // (declared earlier than them) so their own MouseAreas still receive clicks.
+    MouseArea {
+        id: dragArea
+        anchors.fill: parent
+        acceptedButtons: Qt.LeftButton
+        cursorShape: pressed ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+
+        property real _startGlobalX: 0
+        property real _startGlobalY: 0
+
+        onPressed: function (mouse) {
+            const g = mapToGlobal(mouse.x, mouse.y);
+            _startGlobalX = g.x;
+            _startGlobalY = g.y;
+            root.dragStarted();
+        }
+
+        onPositionChanged: function (mouse) {
+            if (!pressed)
+                return;
+            const g = mapToGlobal(mouse.x, mouse.y);
+            root.dragMoved(g.x - _startGlobalX, g.y - _startGlobalY);
+        }
+
+        onReleased: root.dragEnded()
+
+        onDoubleClicked: root.foldClicked()
     }
 
     Rectangle {
@@ -55,7 +89,28 @@ Item {
         }
     }
 
+    StyledText {
+        id: titleText
+        anchors.left: swatch.right
+        anchors.leftMargin: Theme.spacingS
+        anchors.right: buttonsRow.left
+        anchors.rightMargin: Theme.spacingXS
+        anchors.verticalCenter: parent.verticalCenter
+        text: root.title
+        color: root.accentPalette?.text ?? Theme.surfaceText
+        font.pixelSize: Theme.fontSizeSmall
+        font.weight: Font.Medium
+        opacity: 0.95
+        wrapMode: Text.NoWrap
+        maximumLineCount: 1
+        elide: Text.ElideRight
+        clip: true
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+    }
+
     Row {
+        id: buttonsRow
         anchors.right: parent.right
         anchors.rightMargin: Theme.spacingXS
         anchors.verticalCenter: parent.verticalCenter

@@ -30,6 +30,19 @@ DesktopPluginComponent {
     readonly property bool folded: pluginData.folded ?? false
     readonly property bool showToolbar: pluginData.showToolbar ?? true
 
+    // First non-empty line of editor content, shown as the title bar label.
+    // Strips leading markdown heading hashes so "# Hello" reads as "Hello".
+    readonly property string titleLine: {
+        const t = editor.text || "";
+        const lines = t.split("\n");
+        for (var i = 0; i < lines.length; i++) {
+            const stripped = lines[i].replace(/^#+\s*/, "").trim();
+            if (stripped.length > 0)
+                return stripped;
+        }
+        return "";
+    }
+
     // Fold animation: animate the body Rectangle's height while the wrapper window stays put.
     // The wrapper resize is triggered before unfold (so window grows first) or after fold
     // completes (so window shrinks last). Empty area inside the wrapper renders transparent.
@@ -95,6 +108,7 @@ DesktopPluginComponent {
             accentPalette: root.accentPalette
             pinned: root.pinned
             folded: root.folded
+            title: root.titleLine
 
             onColorClicked: {
                 menu.visible = false;
@@ -124,6 +138,8 @@ DesktopPluginComponent {
                 trashPopover.visible = false;
                 menu.visible = !menu.visible;
             }
+            onDragStarted: root._dragStart()
+            onDragMoved: (dx, dy) => root._dragMove(dx, dy)
         }
 
         Item {
@@ -578,6 +594,35 @@ DesktopPluginComponent {
             return;
         for (var i = 0; i < keys.length; i++)
             SettingsData.updateDesktopWidgetInstancePosition(instanceId, keys[i], { height: h });
+    }
+
+    // Left-click drag on the title bar — moves the wrapper window. Sync mode
+    // ("_synced" position with normalized fractions) is skipped; right-click drag
+    // continues to work in that case.
+    property real _dragOriginX: 0
+    property real _dragOriginY: 0
+    property string _dragKey: ""
+
+    function _dragStart() {
+        const positions = instanceData?.positions ?? {};
+        const keys = Object.keys(positions).filter(k => k !== "_synced");
+        if (keys.length === 0) {
+            _dragKey = "";
+            return;
+        }
+        const k = keys[0];
+        _dragKey = k;
+        _dragOriginX = positions[k]?.x ?? 0;
+        _dragOriginY = positions[k]?.y ?? 0;
+    }
+
+    function _dragMove(dx, dy) {
+        if (_dragKey === "")
+            return;
+        SettingsData.updateDesktopWidgetInstancePosition(instanceId, _dragKey, {
+            x: _dragOriginX + dx,
+            y: _dragOriginY + dy
+        });
     }
 
     function _newSticky(copyContent) {
