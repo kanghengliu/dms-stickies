@@ -75,6 +75,22 @@ Item {
             color: root.textColor
             selectionColor: root.selectionColor
             selectedTextColor: root.selectedTextColor
+            // Default caret reads its color from the active QPA theme/style,
+            // which on some setups maps to a red accent. Override with a plain
+            // Rectangle so the caret tracks the text color. Qt does NOT
+            // auto-blink delegates, so we drive the blink via a small Timer.
+            cursorDelegate: Rectangle {
+                width: 1.5
+                color: editor.color
+                property bool _on: true
+                visible: editor.activeFocus && _on
+                Timer {
+                    running: editor.activeFocus
+                    repeat: true
+                    interval: 530
+                    onTriggered: parent._on = !parent._on
+                }
+            }
             selectByMouse: true
             selectByKeyboard: true
             persistentSelection: true
