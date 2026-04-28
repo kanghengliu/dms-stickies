@@ -655,29 +655,67 @@ DesktopPluginComponent {
     // Left-click drag on the title bar — moves the wrapper window. Sync mode
     // ("_synced" position with normalized fractions) is skipped; right-click drag
     // continues to work in that case.
+    //
+    // `screen` is injected by DesktopPluginWrapper (one wrapper per screen, so
+    // each plugin instance's screen resolves to a different monitor).
+    // `ourScreenKey` matches the wrapper's positionKey when sync is OFF.
+    property var screen: null
+    readonly property string ourScreenKey: screen ? SettingsData.getScreenDisplayName(screen) : ""
+
     property real _dragOriginX: 0
     property real _dragOriginY: 0
+    property real _dragLastDx: 0
+    property real _dragLastDy: 0
+    property real _dragWriteX: 0
+    property real _dragWriteY: 0
     property string _dragKey: ""
 
     function _dragStart() {
         const positions = instanceData?.positions ?? {};
-        const keys = Object.keys(positions).filter(k => k !== "_synced");
-        if (keys.length === 0) {
-            _dragKey = "";
-            return;
+        let key = "";
+        if (ourScreenKey && positions[ourScreenKey] !== undefined) {
+            key = ourScreenKey;
+        } else {
+            const keys = Object.keys(positions).filter(k => k !== "_synced");
+            if (keys.length === 0) {
+                _dragKey = "";
+                return;
+            }
+            key = keys[0];
         }
-        const k = keys[0];
-        _dragKey = k;
-        _dragOriginX = positions[k]?.x ?? 0;
-        _dragOriginY = positions[k]?.y ?? 0;
+        _dragKey = key;
+        _dragOriginX = positions[key]?.x ?? 0;
+        _dragOriginY = positions[key]?.y ?? 0;
+        _dragWriteX = _dragOriginX;
+        _dragWriteY = _dragOriginY;
+        _dragLastDx = 0;
+        _dragLastDy = 0;
     }
 
     function _dragMove(dx, dy) {
         if (_dragKey === "")
             return;
+        // Apply the per-step delta to the last written position and clamp,
+        // so overdrag past a screen edge doesn't accumulate phantom offset.
+        const stepDx = dx - _dragLastDx;
+        const stepDy = dy - _dragLastDy;
+        _dragLastDx = dx;
+        _dragLastDy = dy;
+
+        let newX = _dragWriteX + stepDx;
+        let newY = _dragWriteY + stepDy;
+        if (screen) {
+            const maxX = Math.max(0, screen.width - widgetWidth);
+            const maxY = Math.max(0, screen.height - widgetHeight);
+            newX = Math.max(0, Math.min(newX, maxX));
+            newY = Math.max(0, Math.min(newY, maxY));
+        }
+        _dragWriteX = newX;
+        _dragWriteY = newY;
+
         SettingsData.updateDesktopWidgetInstancePosition(instanceId, _dragKey, {
-            x: _dragOriginX + dx,
-            y: _dragOriginY + dy
+            x: newX,
+            y: newY
         });
     }
 
