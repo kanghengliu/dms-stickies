@@ -85,8 +85,6 @@ DesktopPluginComponent {
         height: root._bodyHeight
         radius: Theme.cornerRadius
         color: root.accentPalette.bodyBg
-        border.color: Qt.rgba(0, 0, 0, 0.18)
-        border.width: 1
         clip: true
 
         StickyTitleBar {
