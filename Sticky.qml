@@ -27,8 +27,19 @@ DesktopPluginComponent {
     readonly property string accentName: pluginData.accent ?? "yellow"
     readonly property var accentPalette: Palette.get(accentName)
     readonly property bool pinned: pluginData.showOnOverlay ?? false
-    readonly property bool folded: pluginData.folded ?? false
     readonly property bool showToolbar: pluginData.showToolbar ?? true
+
+    // Per-screen fold (when sync OFF) vs shared (sync ON):
+    // - syncEnabled = pluginData.syncPositionAcrossScreens
+    // - foldedKey:        "folded"        when sync ON, "folded_<screenKey>"        when OFF
+    // - unfoldedHeightKey: "unfoldedHeight" when sync ON, "unfoldedHeight_<screenKey>" when OFF
+    // - positionKey:      "_synced"       when sync ON, screenKey                    when OFF
+    // The screen var is injected by DesktopPluginWrapper (one wrapper per screen).
+    // Reads fall back to legacy single-key state for backward compat.
+    readonly property string foldedKey: syncEnabled ? "folded" : ("folded_" + ourScreenKey)
+    readonly property string unfoldedHeightKey: syncEnabled ? "unfoldedHeight" : ("unfoldedHeight_" + ourScreenKey)
+    readonly property string positionKey: syncEnabled ? "_synced" : ourScreenKey
+    readonly property bool folded: (pluginData[foldedKey] !== undefined ? pluginData[foldedKey] : pluginData.folded) ?? false
 
     // First non-empty line of editor content, shown as the title bar label.
     // Strips leading markdown heading hashes so "# Hello" reads as "Hello".
@@ -75,7 +86,7 @@ DesktopPluginComponent {
                 // until root.height actually matches the animated value, otherwise the
                 // body Rectangle's height binding flips to root.height (still full) for
                 // one frame and we get a regrow flash.
-                root.setData("folded", true);
+                root.setData(root.foldedKey, true);
                 root._setAllPositionsHeight(root.titleBarHeight);
                 foldReleaseFallback.restart();
             } else {
@@ -602,6 +613,7 @@ DesktopPluginComponent {
     function _toggleFold() {
         if (foldAnim.running)
             return;
+        const savedTarget = (pluginData[unfoldedHeightKey] !== undefined ? pluginData[unfoldedHeightKey] : pluginData.unfoldedHeight) ?? defaultHeight;
         // On Hyprland, the compositor animates layer-shell window resizes itself.
         // Skip the in-plugin body animation so we don't double-animate (otherwise
         // Hyprland's surface scale at the end of the fold visibly squishes the
@@ -609,31 +621,29 @@ DesktopPluginComponent {
         // own resize animation, which provides the fold visual.
         if (CompositorService.isHyprland) {
             if (root.folded) {
-                const target = pluginData.unfoldedHeight ?? defaultHeight;
-                root.setData("folded", false);
-                _setAllPositionsHeight(target);
+                root.setData(foldedKey, false);
+                _setAllPositionsHeight(savedTarget);
             } else {
-                root.setData("unfoldedHeight", widgetHeight);
-                root.setData("folded", true);
+                root.setData(unfoldedHeightKey, widgetHeight);
+                root.setData(foldedKey, true);
                 _setAllPositionsHeight(titleBarHeight);
             }
             return;
         }
         if (root.folded) {
             // Unfold: grow wrapper window first (instant), then animate body height up.
-            const target = pluginData.unfoldedHeight ?? defaultHeight;
             _animatedBodyHeight = titleBarHeight;
             _foldAnimating = true;
-            root.setData("folded", false);
-            _setAllPositionsHeight(target);
+            root.setData(foldedKey, false);
+            _setAllPositionsHeight(savedTarget);
             foldAnim._foldDirection = false;
             foldAnim.from = titleBarHeight;
-            foldAnim.to = target;
+            foldAnim.to = savedTarget;
             foldAnim.start();
         } else {
             // Fold: animate body height down first, then snap wrapper window small.
             const startH = widgetHeight;
-            root.setData("unfoldedHeight", startH);
+            root.setData(unfoldedHeightKey, startH);
             _animatedBodyHeight = startH;
             _foldAnimating = true;
             foldAnim._foldDirection = true;
@@ -643,7 +653,16 @@ DesktopPluginComponent {
         }
     }
 
+    // Writes height only to the position record this sticky reads from.
+    // - Sync ON  → "_synced" (shared across screens).
+    // - Sync OFF → ourScreenKey only (other screens unaffected → per-screen fold).
+    // Falls back to writing every key if positionKey can't be resolved
+    // (e.g., screen not yet injected at startup).
     function _setAllPositionsHeight(h) {
+        if (positionKey !== "") {
+            SettingsData.updateDesktopWidgetInstancePosition(instanceId, positionKey, { height: h });
+            return;
+        }
         const positions = instanceData?.positions ?? {};
         const keys = Object.keys(positions);
         if (keys.length === 0)
