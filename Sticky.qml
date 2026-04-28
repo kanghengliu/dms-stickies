@@ -43,6 +43,16 @@ DesktopPluginComponent {
         return "";
     }
 
+    // Two-step confirmation for the "Empty trash" menu item. First click flips
+    // this true and re-labels the item; second click within the timer's window
+    // actually purges. Resets when the menu closes or the timer expires.
+    property bool _confirmingEmpty: false
+    Timer {
+        id: confirmEmptyTimer
+        interval: 3000
+        onTriggered: root._confirmingEmpty = false
+    }
+
     // Fold animation: animate the body Rectangle's height while the wrapper window stays put.
     // The wrapper resize is triggered before unfold (so window grows first) or after fold
     // completes (so window shrinks last). Empty area inside the wrapper renders transparent.
@@ -266,6 +276,26 @@ DesktopPluginComponent {
             selectedTextColor: root.accentPalette.bodyBg
         }
 
+        // Click-outside-to-dismiss for the swatch palette / menu / trash popover.
+        // Active only while a popover is visible; covers the editor area below
+        // toolbar so toolbar buttons stay reachable. The popovers themselves
+        // (z 10/11) sit above this and absorb their own clicks.
+        MouseArea {
+            anchors.top: toolbar.visible ? toolbar.bottom : titleBar.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            visible: colorPalette.visible || menu.visible || trashPopover.visible
+            enabled: visible
+            acceptedButtons: Qt.LeftButton
+            z: 9
+            onClicked: {
+                colorPalette.visible = false;
+                menu.visible = false;
+                trashPopover.visible = false;
+            }
+        }
+
         ColorPalette {
             id: colorPalette
             visible: false
@@ -297,6 +327,8 @@ DesktopPluginComponent {
             border.width: 1
             z: 10
 
+            onVisibleChanged: if (!visible) root._confirmingEmpty = false
+
             Column {
                 id: menuColumn
                 anchors.left: parent.left
@@ -306,10 +338,16 @@ DesktopPluginComponent {
                 spacing: 0
 
                 Repeater {
+                    // Model is static so the Repeater never rebuilds delegates when
+                    // root._confirmingEmpty or root.showToolbar changes — those flip
+                    // delegate-level property bindings (itemIcon/itemLabel/itemDanger)
+                    // which is reliable. A model that referenced reactive properties
+                    // would re-bind the whole array on each change and rebuild every
+                    // delegate, which loses click state mid-handler.
                     model: [
-                        { icon: root.showToolbar ? "visibility_off" : "visibility", label: root.showToolbar ? "Hide toolbar" : "Show toolbar", action: "toggleToolbar" },
-                        { icon: "content_copy", label: "Duplicate", action: "duplicate" },
-                        { icon: "text_snippet", label: "Copy as Markdown", action: "copy" },
+                        { action: "toggleToolbar" },
+                        { icon: "note_add", label: "Duplicate", action: "duplicate" },
+                        { icon: "content_copy", label: "Copy", action: "copy" },
                         { icon: "restore_from_trash", label: "Restore from trash…", action: "restore" },
                         { icon: "delete_sweep", label: "Empty trash", action: "emptyTrash" },
                         { icon: "delete", label: "Delete", action: "delete", danger: true }
@@ -320,6 +358,16 @@ DesktopPluginComponent {
                         height: 28
 
                         readonly property var item: modelData
+                        readonly property string itemIcon: item.action === "toggleToolbar"
+                            ? (root.showToolbar ? "visibility_off" : "visibility")
+                            : item.icon
+                        readonly property string itemLabel: item.action === "toggleToolbar"
+                            ? (root.showToolbar ? "Hide toolbar" : "Show toolbar")
+                            : (item.action === "emptyTrash" && root._confirmingEmpty
+                                ? "Click again to confirm"
+                                : item.label)
+                        readonly property bool itemDanger: (item.danger === true)
+                            || (item.action === "emptyTrash" && root._confirmingEmpty)
 
                         Rectangle {
                             anchors.fill: parent
@@ -334,16 +382,16 @@ DesktopPluginComponent {
 
                             DankIcon {
                                 anchors.verticalCenter: parent.verticalCenter
-                                name: parent.parent.item.icon
+                                name: parent.parent.itemIcon
                                 size: 14
-                                color: parent.parent.item.danger ? Theme.error : Theme.surfaceText
+                                color: parent.parent.itemDanger ? Theme.error : Theme.surfaceText
                             }
 
                             StyledText {
                                 anchors.verticalCenter: parent.verticalCenter
-                                text: parent.parent.item.label
+                                text: parent.parent.itemLabel
                                 font.pixelSize: Theme.fontSizeSmall
-                                color: parent.parent.item.danger ? Theme.error : Theme.surfaceText
+                                color: parent.parent.itemDanger ? Theme.error : Theme.surfaceText
                             }
                         }
 
@@ -354,6 +402,12 @@ DesktopPluginComponent {
                             cursorShape: Qt.PointingHandCursor
                             acceptedButtons: Qt.LeftButton
                             onClicked: {
+                                // First Empty-trash click arms confirmation; menu stays open.
+                                if (parent.item.action === "emptyTrash" && !root._confirmingEmpty) {
+                                    root._confirmingEmpty = true;
+                                    confirmEmptyTimer.restart();
+                                    return;
+                                }
                                 menu.visible = false;
                                 root._handleMenuAction(parent.item.action);
                             }
@@ -536,6 +590,8 @@ DesktopPluginComponent {
             break;
         case "emptyTrash":
             _emptyTrash();
+            _confirmingEmpty = false;
+            confirmEmptyTimer.stop();
             break;
         case "delete":
             _deleteSticky();
