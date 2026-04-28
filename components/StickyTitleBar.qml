@@ -100,7 +100,7 @@ Item {
         color: root.accentPalette?.text ?? Theme.surfaceText
         font.pixelSize: Theme.fontSizeSmall
         font.weight: Font.Medium
-        opacity: 0.95
+        opacity: 1
         wrapMode: Text.NoWrap
         maximumLineCount: 1
         elide: Text.ElideRight

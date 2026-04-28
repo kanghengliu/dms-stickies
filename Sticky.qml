@@ -29,6 +29,26 @@ DesktopPluginComponent {
     readonly property bool pinned: pluginData.showOnOverlay ?? false
     readonly property bool showToolbar: pluginData.showToolbar ?? true
 
+    // Per-sticky opacity (0.2..1.0). Goes fully opaque while the editor has
+    // focus so the user always sees the sticky clearly while writing; fades to
+    // the configured `bodyAlpha` when focus drops. While the user is actively
+    // dragging the opacity slider we temporarily ignore the focus boost so
+    // they can preview the alpha they're picking. The body's bodyBg is much
+    // paler than the title bar's headerBg, so at equal raw alpha the body
+    // washes out more — power curve compensates so they fade in lockstep.
+    readonly property real bodyAlpha: pluginData.alpha ?? 1.0
+    property bool _adjustingAlpha: false
+    property real _effectiveAlpha: ((editor.hasFocus || stickyHover.hovered) && !_adjustingAlpha) ? 1.0 : bodyAlpha
+    readonly property real _bodyVisualAlpha: Math.pow(_effectiveAlpha, 0.65)
+    readonly property color bodyColor: {
+        const c = Qt.color(accentPalette.bodyBg);
+        return Qt.rgba(c.r, c.g, c.b, _bodyVisualAlpha);
+    }
+
+    Behavior on _effectiveAlpha {
+        NumberAnimation { duration: Theme.shortDuration; easing.type: Theme.standardEasing }
+    }
+
     // Per-screen fold (when sync OFF) vs shared (sync ON):
     // - syncEnabled = pluginData.syncPositionAcrossScreens
     // - foldedKey:        "folded"        when sync ON, "folded_<screenKey>"        when OFF
@@ -118,8 +138,14 @@ DesktopPluginComponent {
         anchors.right: parent.right
         height: root._bodyHeight
         radius: Theme.cornerRadius
-        color: root.accentPalette.bodyBg
+        color: root.bodyColor
         clip: true
+
+        // Hover-anywhere-on-the-sticky also counts as "active" so title bar
+        // clicks/hovers go fully opaque alongside editor focus. Non-intercepting
+        // pointer handler — doesn't steal events from title bar buttons or the
+        // editor.
+        HoverHandler { id: stickyHover }
 
         StickyTitleBar {
             id: titleBar
@@ -130,6 +156,7 @@ DesktopPluginComponent {
             pinned: root.pinned
             folded: root.folded
             title: root.titleLine
+            opacity: root._effectiveAlpha
 
             onColorClicked: {
                 if (root.folded)
@@ -319,12 +346,16 @@ DesktopPluginComponent {
             anchors.topMargin: Theme.spacingXS
             anchors.leftMargin: Theme.spacingS
             current: root.accentName
+            alpha: root.bodyAlpha
             z: 10
 
             onPick: name => {
                 root.setData("accent", name);
                 visible = false;
             }
+            onAlphaPicked: value => root.setData("alpha", value)
+            onAlphaDragStarted: root._adjustingAlpha = true
+            onAlphaDragEnded: root._adjustingAlpha = false
         }
 
         Rectangle {
