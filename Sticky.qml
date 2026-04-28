@@ -132,6 +132,8 @@ DesktopPluginComponent {
             title: root.titleLine
 
             onColorClicked: {
+                if (root.folded)
+                    root._toggleFold();
                 menu.visible = false;
                 trashPopover.visible = false;
                 colorPalette.visible = !colorPalette.visible;
@@ -155,6 +157,8 @@ DesktopPluginComponent {
                 root._toggleFold();
             }
             onMenuClicked: {
+                if (root.folded)
+                    root._toggleFold();
                 colorPalette.visible = false;
                 trashPopover.visible = false;
                 menu.visible = !menu.visible;
