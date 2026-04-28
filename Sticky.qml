@@ -781,9 +781,17 @@ DesktopPluginComponent {
         }
         // duplicateDesktopWidgetInstance appends " (Copy)" — strip it
         SettingsData.updateDesktopWidgetInstance(newInst.id, { name: "DMS Stickies" });
-        SettingsData.updateDesktopWidgetInstanceConfig(newInst.id, {
-            folded: false
-        });
+        // Reset all fold-related keys so the new sticky is unfolded regardless of
+        // which key (legacy "folded" or per-screen "folded_<screenKey>") the
+        // parent had set. duplicateDesktopWidgetInstance deep-clones config, so
+        // the per-screen keys come along.
+        const cfgUpdates = { folded: false };
+        const inheritedCfg = newInst.config ?? {};
+        for (var k in inheritedCfg) {
+            if (k.indexOf("folded_") === 0)
+                cfgUpdates[k] = false;
+        }
+        SettingsData.updateDesktopWidgetInstanceConfig(newInst.id, cfgUpdates);
 
         for (var i = 0; i < newPositions.length; i++) {
             const np = newPositions[i];
