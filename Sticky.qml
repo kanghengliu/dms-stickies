@@ -652,15 +652,17 @@ DesktopPluginComponent {
             SettingsData.updateDesktopWidgetInstancePosition(instanceId, keys[i], { height: h });
     }
 
-    // Left-click drag on the title bar — moves the wrapper window. Sync mode
-    // ("_synced" position with normalized fractions) is skipped; right-click drag
-    // continues to work in that case.
+    // Left-click drag on the title bar — moves the wrapper window.
     //
     // `screen` is injected by DesktopPluginWrapper (one wrapper per screen, so
     // each plugin instance's screen resolves to a different monitor).
     // `ourScreenKey` matches the wrapper's positionKey when sync is OFF.
+    //
+    // Sync mode: positions["_synced"] stores normalized fractions (0..1) of
+    // screen size — we read*screen.{width,height} on entry and divide on write.
     property var screen: null
     readonly property string ourScreenKey: screen ? SettingsData.getScreenDisplayName(screen) : ""
+    readonly property bool syncEnabled: pluginData.syncPositionAcrossScreens ?? false
 
     property real _dragOriginX: 0
     property real _dragOriginY: 0
@@ -669,12 +671,24 @@ DesktopPluginComponent {
     property real _dragWriteX: 0
     property real _dragWriteY: 0
     property string _dragKey: ""
+    property bool _dragNormalized: false
 
     function _dragStart() {
         const positions = instanceData?.positions ?? {};
         let key = "";
-        if (ourScreenKey && positions[ourScreenKey] !== undefined) {
+        let originX = 0;
+        let originY = 0;
+        let normalized = false;
+
+        if (syncEnabled && screen && positions["_synced"] !== undefined) {
+            key = "_synced";
+            originX = (positions[key].x ?? 0) * screen.width;
+            originY = (positions[key].y ?? 0) * screen.height;
+            normalized = true;
+        } else if (ourScreenKey && positions[ourScreenKey] !== undefined) {
             key = ourScreenKey;
+            originX = positions[key].x ?? 0;
+            originY = positions[key].y ?? 0;
         } else {
             const keys = Object.keys(positions).filter(k => k !== "_synced");
             if (keys.length === 0) {
@@ -682,12 +696,16 @@ DesktopPluginComponent {
                 return;
             }
             key = keys[0];
+            originX = positions[key].x ?? 0;
+            originY = positions[key].y ?? 0;
         }
+
         _dragKey = key;
-        _dragOriginX = positions[key]?.x ?? 0;
-        _dragOriginY = positions[key]?.y ?? 0;
-        _dragWriteX = _dragOriginX;
-        _dragWriteY = _dragOriginY;
+        _dragNormalized = normalized;
+        _dragOriginX = originX;
+        _dragOriginY = originY;
+        _dragWriteX = originX;
+        _dragWriteY = originY;
         _dragLastDx = 0;
         _dragLastDy = 0;
     }
@@ -713,9 +731,16 @@ DesktopPluginComponent {
         _dragWriteX = newX;
         _dragWriteY = newY;
 
+        let writeX = newX;
+        let writeY = newY;
+        if (_dragNormalized && screen) {
+            writeX = newX / screen.width;
+            writeY = newY / screen.height;
+        }
+
         SettingsData.updateDesktopWidgetInstancePosition(instanceId, _dragKey, {
-            x: newX,
-            y: newY
+            x: writeX,
+            y: writeY
         });
     }
 
