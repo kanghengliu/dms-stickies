@@ -90,3 +90,5 @@ Practical consequences:
 ## Backlog
 - [ ] image paste & inline rendering
 - [ ] spawn-new-sticky-beside-parent positioning (likely needs upstream wrapper exposure of `widgetX`/`widgetY`/`screenKey`)
+- [ ] lock Y-axis resize while folded — wrapper has no max-height hook; snap-back from plugin side (whether via `heightChanged` debounce or `SettingsData.desktopWidgetInstancesChanged` Connections) doesn't reliably catch the drag-release on Niri. Likely needs upstream wrapper change to expose either a max-height or an `interactive`/`isInteracting` signal so the plugin can detect drag-end deterministically.
+- [ ] sync-respecting fold (per-screen fold state when `syncPositionAcrossScreens` is OFF) — needs the wrapper to inject the current `screen`/`screenKey` to the plugin component so per-screen config keys can be derived (`Window.window.screen` didn't resolve in the layer-shell context).
