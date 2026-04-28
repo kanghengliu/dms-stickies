@@ -768,6 +768,12 @@ DesktopPluginComponent {
     }
 
     function _newSticky(copyContent) {
+        // Compute per-screen beside-positions BEFORE duplicating, so each
+        // screen the parent occupies gets its own relative beside-position.
+        // Sync OFF: iterate every screen with a saved parent position.
+        // Sync ON:  single "_synced" entry with normalized fractions.
+        const newPositions = _computeBesidePositions();
+
         const newInst = SettingsData.duplicateDesktopWidgetInstance(instanceId);
         if (!newInst) {
             ToastService.showError("Failed to create sticky");
@@ -778,11 +784,99 @@ DesktopPluginComponent {
         SettingsData.updateDesktopWidgetInstanceConfig(newInst.id, {
             folded: false
         });
+
+        for (var i = 0; i < newPositions.length; i++) {
+            const np = newPositions[i];
+            SettingsData.updateDesktopWidgetInstancePosition(newInst.id, np.key, {
+                x: np.x, y: np.y, width: np.width, height: np.height
+            });
+        }
+
         if (copyContent === true) {
             const src = storageDir + "/notes/" + instanceId + ".md";
             const dst = storageDir + "/notes/" + newInst.id + ".md";
             Quickshell.execDetached(["sh", "-c", "mkdir -p '" + storageDir + "/notes' && cp '" + src + "' '" + dst + "' 2>/dev/null || true"]);
         }
+    }
+
+    function _computeBesidePositions() {
+        const result = [];
+        const positions = instanceData?.positions ?? {};
+
+        if (syncEnabled) {
+            if (!screen)
+                return result;
+            const p = positions["_synced"];
+            if (!p)
+                return result;
+            const w = p.width ?? defaultWidth;
+            const h = (pluginData.folded === true)
+                ? (pluginData.unfoldedHeight ?? defaultHeight)
+                : (p.height ?? defaultHeight);
+            const px = (p.x ?? 0) * screen.width;
+            const py = (p.y ?? 0) * screen.height;
+            const b = _besidePos(px, py, w, h, screen.width, screen.height);
+            result.push({
+                key: "_synced",
+                x: b.x / screen.width,
+                y: b.y / screen.height,
+                width: w,
+                height: h
+            });
+            return result;
+        }
+
+        // Sync OFF — write a beside-position for every screen the parent has a
+        // position record on, computed against THAT screen's bounds.
+        const screens = Array.from(Quickshell.screens.values());
+        for (var i = 0; i < screens.length; i++) {
+            const s = screens[i];
+            const sk = SettingsData.getScreenDisplayName(s);
+            const p = positions[sk];
+            if (!p)
+                continue;
+            const w = p.width ?? defaultWidth;
+            const h = _isFoldedOnScreenKey(sk)
+                ? _unfoldedHeightForScreenKey(sk)
+                : (p.height ?? defaultHeight);
+            const b = _besidePos(p.x ?? 0, p.y ?? 0, w, h, s.width, s.height);
+            result.push({
+                key: sk,
+                x: b.x,
+                y: b.y,
+                width: w,
+                height: h
+            });
+        }
+        return result;
+    }
+
+    function _besidePos(px, py, w, h, sw, sh) {
+        let nx = px + w + 12;
+        let ny = py;
+        if (nx + w > sw) {
+            // No room to the right — cascade down-right (macOS-style).
+            nx = px + 24;
+            ny = py + 24;
+        }
+        return {
+            x: Math.max(0, Math.min(nx, Math.max(0, sw - w))),
+            y: Math.max(0, Math.min(ny, Math.max(0, sh - h)))
+        };
+    }
+
+    function _isFoldedOnScreenKey(key) {
+        const k = "folded_" + key;
+        if (pluginData[k] !== undefined)
+            return pluginData[k] === true;
+        return pluginData.folded === true;
+    }
+
+    function _unfoldedHeightForScreenKey(key) {
+        const k = "unfoldedHeight_" + key;
+        if (pluginData[k] !== undefined)
+            return pluginData[k];
+        return pluginData.unfoldedHeight ?? defaultHeight;
     }
 
     function _copyMarkdown() {
