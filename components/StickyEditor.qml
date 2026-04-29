@@ -13,6 +13,11 @@ Item {
     property color textColor: Theme.surfaceText
     property color selectionColor: Theme.primary
     property color selectedTextColor: Theme.background
+    property real fontSize: Theme.fontSizeMedium
+
+    signal zoomInRequested
+    signal zoomOutRequested
+    signal zoomResetRequested
 
     readonly property string filePath: instanceId !== "" && storageDir !== "" ? (storageDir + "/notes/" + instanceId + ".md") : ""
 
@@ -71,7 +76,7 @@ Item {
             wrapMode: TextArea.Wrap
             textFormat: TextEdit.PlainText
             font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontSizeMedium
+            font.pixelSize: root.fontSize
             color: root.textColor
             selectionColor: root.selectionColor
             selectedTextColor: root.selectedTextColor
@@ -108,6 +113,26 @@ Item {
                 if (!root._loaded || root._suppressSave)
                     return;
                 saveDebounce.restart();
+            }
+
+            Keys.onPressed: function (event) {
+                if (!(event.modifiers & Qt.ControlModifier))
+                    return;
+                switch (event.key) {
+                case Qt.Key_Plus:
+                case Qt.Key_Equal:
+                    root.zoomInRequested();
+                    event.accepted = true;
+                    break;
+                case Qt.Key_Minus:
+                    root.zoomOutRequested();
+                    event.accepted = true;
+                    break;
+                case Qt.Key_0:
+                    root.zoomResetRequested();
+                    event.accepted = true;
+                    break;
+                }
             }
         }
     }

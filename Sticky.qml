@@ -37,6 +37,15 @@ DesktopPluginComponent {
     // paler than the title bar's headerBg, so at equal raw alpha the body
     // washes out more — power curve compensates so they fade in lockstep.
     readonly property real bodyAlpha: pluginData.alpha ?? 1.0
+
+    // Per-sticky font size (Ctrl+/- zoom, Ctrl+0 reset). Falls back to theme
+    // default. Persisted in pluginData so each sticky remembers its zoom.
+    readonly property real defaultFontSize: Theme.fontSizeMedium
+    readonly property real fontSize: pluginData.fontSize ?? defaultFontSize
+    readonly property real fontSizeMin: 8
+    readonly property real fontSizeMax: 36
+    readonly property real fontSizeStep: 2
+
     property bool _adjustingAlpha: false
     property real _effectiveAlpha: ((editor.hasFocus || stickyHover.hovered) && !_adjustingAlpha) ? 1.0 : bodyAlpha
     readonly property real _bodyVisualAlpha: Math.pow(_effectiveAlpha, 0.65)
@@ -316,6 +325,11 @@ DesktopPluginComponent {
             textColor: root.accentPalette.text
             selectionColor: root.accentPalette.accent
             selectedTextColor: root.accentPalette.bodyBg
+            fontSize: root.fontSize
+
+            onZoomInRequested: root._zoomFont(root.fontSizeStep)
+            onZoomOutRequested: root._zoomFont(-root.fontSizeStep)
+            onZoomResetRequested: root.setData("fontSize", root.defaultFontSize)
         }
 
         // Click-outside-to-dismiss for the swatch palette / menu / trash popover.
@@ -643,6 +657,12 @@ DesktopPluginComponent {
             _deleteSticky();
             break;
         }
+    }
+
+    function _zoomFont(delta) {
+        const newSize = Math.max(fontSizeMin, Math.min(fontSizeMax, root.fontSize + delta));
+        if (newSize !== root.fontSize)
+            root.setData("fontSize", newSize);
     }
 
     function _toggleFold() {
