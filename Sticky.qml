@@ -740,8 +740,6 @@ DesktopPluginComponent {
 
     property real _dragOriginX: 0
     property real _dragOriginY: 0
-    property real _dragLastDx: 0
-    property real _dragLastDy: 0
     property real _dragWriteX: 0
     property real _dragWriteY: 0
     property string _dragKey: ""
@@ -780,28 +778,32 @@ DesktopPluginComponent {
         _dragOriginY = originY;
         _dragWriteX = originX;
         _dragWriteY = originY;
-        _dragLastDx = 0;
-        _dragLastDy = 0;
     }
 
     function _dragMove(dx, dy) {
         if (_dragKey === "")
             return;
-        // Apply the per-step delta to the last written position and clamp,
-        // so overdrag past a screen edge doesn't accumulate phantom offset.
-        const stepDx = dx - _dragLastDx;
-        const stepDy = dy - _dragLastDy;
-        _dragLastDx = dx;
-        _dragLastDy = dy;
-
-        let newX = _dragWriteX + stepDx;
-        let newY = _dragWriteY + stepDy;
+        // Origin-based tracking matches the wrapper's right-click drag: when
+        // the cursor overdrags past a screen edge, the overdrag stays in `dx`
+        // and the clamped position keeps reporting the edge. The widget only
+        // starts moving again once the cursor crosses back into screen space.
+        // Step-based tracking (`_dragWriteX + stepDx`) would "consume" the
+        // overdrag at the clamp, so a 2-pixel cursor jiggle off-screen would
+        // produce a 2-pixel widget jiggle on-screen — the visible edge shake.
+        let newX = _dragOriginX + dx;
+        let newY = _dragOriginY + dy;
         if (screen) {
             const maxX = Math.max(0, screen.width - widgetWidth);
             const maxY = Math.max(0, screen.height - widgetHeight);
             newX = Math.max(0, Math.min(newX, maxX));
             newY = Math.max(0, Math.min(newY, maxY));
         }
+        newX = Math.round(newX);
+        newY = Math.round(newY);
+
+        if (newX === _dragWriteX && newY === _dragWriteY)
+            return;
+
         _dragWriteX = newX;
         _dragWriteY = newY;
 
