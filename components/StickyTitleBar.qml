@@ -49,19 +49,18 @@ Item {
 
         property real _startGlobalX: 0
         property real _startGlobalY: 0
-        property real _lastDx: 0
-        property real _lastDy: 0
-        // Drag is live from the first frame for zero-latency feel. On release,
-        // if the cursor never travelled past the platform threshold the move
-        // is treated as accidental and Sticky.qml snaps the position back.
+        property real _maxDist: 0
+        // Drag is live from the first frame for zero-latency feel. Snap-back
+        // fires only when the cursor NEVER travels past the platform threshold
+        // — once the user commits to a real drag, the final position stands
+        // even if they happen to release near the origin.
         readonly property int _threshold: Qt.styleHints.startDragDistance
 
         onPressed: function (mouse) {
             const g = mapToGlobal(mouse.x, mouse.y);
             _startGlobalX = g.x;
             _startGlobalY = g.y;
-            _lastDx = 0;
-            _lastDy = 0;
+            _maxDist = 0;
             root.dragStarted();
         }
 
@@ -69,13 +68,16 @@ Item {
             if (!pressed)
                 return;
             const g = mapToGlobal(mouse.x, mouse.y);
-            _lastDx = g.x - _startGlobalX;
-            _lastDy = g.y - _startGlobalY;
-            root.dragMoved(_lastDx, _lastDy);
+            const dx = g.x - _startGlobalX;
+            const dy = g.y - _startGlobalY;
+            const reach = Math.max(Math.abs(dx), Math.abs(dy));
+            if (reach > _maxDist)
+                _maxDist = reach;
+            root.dragMoved(dx, dy);
         }
 
         onReleased: {
-            const cancelled = Math.abs(_lastDx) < _threshold && Math.abs(_lastDy) < _threshold;
+            const cancelled = _maxDist < _threshold;
             root.dragEnded(cancelled);
         }
 

@@ -132,6 +132,50 @@ DesktopPluginComponent {
         onTriggered: root._foldAnimating = false
     }
 
+    // Snap-back animation: interpolates the position and pushes intermediate
+    // values to SettingsData each frame so the wrapper renders the slide.
+    property string _snapBackKey: ""
+    property bool _snapBackNormalized: false
+    property real snapBackX: 0
+    property real snapBackY: 0
+
+    onSnapBackXChanged: _snapBackPush()
+    onSnapBackYChanged: _snapBackPush()
+
+    function _snapBackPush() {
+        if (_snapBackKey === "")
+            return;
+        let writeX = snapBackX;
+        let writeY = snapBackY;
+        if (_snapBackNormalized && screen) {
+            writeX = snapBackX / screen.width;
+            writeY = snapBackY / screen.height;
+        }
+        SettingsData.updateDesktopWidgetInstancePosition(instanceId, _snapBackKey, {
+            x: writeX,
+            y: writeY
+        });
+    }
+
+    ParallelAnimation {
+        id: snapBackAnim
+        NumberAnimation {
+            id: snapBackXAnim
+            target: root
+            property: "snapBackX"
+            duration: Theme.shortDuration
+            easing.type: Theme.standardEasing
+        }
+        NumberAnimation {
+            id: snapBackYAnim
+            target: root
+            property: "snapBackY"
+            duration: Theme.shortDuration
+            easing.type: Theme.standardEasing
+        }
+        onFinished: root._snapBackKey = ""
+    }
+
     onHeightChanged: {
         if (_foldAnimating && !foldAnim.running) {
             if (Math.abs(height - _animatedBodyHeight) < 2) {
@@ -750,6 +794,10 @@ DesktopPluginComponent {
     property bool _dragWroteAnything: false
 
     function _dragStart() {
+        if (snapBackAnim.running) {
+            snapBackAnim.stop();
+            _snapBackKey = "";
+        }
         const positions = instanceData?.positions ?? {};
         let key = "";
         let originX = 0;
@@ -853,16 +901,13 @@ DesktopPluginComponent {
         // Only fire if we actually wrote during the drag; a pure click+release
         // shouldn't re-write the same value.
         if (cancelled && _dragWroteAnything) {
-            let writeX = _dragSavedX;
-            let writeY = _dragSavedY;
-            if (_dragNormalized && screen) {
-                writeX = _dragSavedX / screen.width;
-                writeY = _dragSavedY / screen.height;
-            }
-            SettingsData.updateDesktopWidgetInstancePosition(instanceId, _dragKey, {
-                x: writeX,
-                y: writeY
-            });
+            _snapBackKey = _dragKey;
+            _snapBackNormalized = _dragNormalized;
+            snapBackXAnim.from = _dragWriteX;
+            snapBackXAnim.to = _dragSavedX;
+            snapBackYAnim.from = _dragWriteY;
+            snapBackYAnim.to = _dragSavedY;
+            snapBackAnim.start();
         }
         _dragKey = "";
     }
