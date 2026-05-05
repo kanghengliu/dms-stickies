@@ -17,7 +17,7 @@ Item {
     signal menuClicked
     signal dragStarted
     signal dragMoved(real dx, real dy)
-    signal dragEnded
+    signal dragEnded(bool cancelled)
 
     height: 28
 
@@ -49,11 +49,19 @@ Item {
 
         property real _startGlobalX: 0
         property real _startGlobalY: 0
+        property real _lastDx: 0
+        property real _lastDy: 0
+        // Drag is live from the first frame for zero-latency feel. On release,
+        // if the cursor never travelled past the platform threshold the move
+        // is treated as accidental and Sticky.qml snaps the position back.
+        readonly property int _threshold: Qt.styleHints.startDragDistance
 
         onPressed: function (mouse) {
             const g = mapToGlobal(mouse.x, mouse.y);
             _startGlobalX = g.x;
             _startGlobalY = g.y;
+            _lastDx = 0;
+            _lastDy = 0;
             root.dragStarted();
         }
 
@@ -61,10 +69,15 @@ Item {
             if (!pressed)
                 return;
             const g = mapToGlobal(mouse.x, mouse.y);
-            root.dragMoved(g.x - _startGlobalX, g.y - _startGlobalY);
+            _lastDx = g.x - _startGlobalX;
+            _lastDy = g.y - _startGlobalY;
+            root.dragMoved(_lastDx, _lastDy);
         }
 
-        onReleased: root.dragEnded()
+        onReleased: {
+            const cancelled = Math.abs(_lastDx) < _threshold && Math.abs(_lastDy) < _threshold;
+            root.dragEnded(cancelled);
+        }
 
         onDoubleClicked: root.foldClicked()
     }

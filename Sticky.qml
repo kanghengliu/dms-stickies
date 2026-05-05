@@ -201,6 +201,7 @@ DesktopPluginComponent {
             }
             onDragStarted: root._dragStart()
             onDragMoved: (dx, dy) => root._dragMove(dx, dy)
+            onDragEnded: cancelled => root._dragEnd(cancelled)
         }
 
         Item {
@@ -740,10 +741,13 @@ DesktopPluginComponent {
 
     property real _dragOriginX: 0
     property real _dragOriginY: 0
+    property real _dragSavedX: 0
+    property real _dragSavedY: 0
     property real _dragWriteX: 0
     property real _dragWriteY: 0
     property string _dragKey: ""
     property bool _dragNormalized: false
+    property bool _dragWroteAnything: false
 
     function _dragStart() {
         const positions = instanceData?.positions ?? {};
@@ -772,12 +776,30 @@ DesktopPluginComponent {
             originY = positions[key].y ?? 0;
         }
 
+        // Preserve the original saved position for snap-back. It may be
+        // out-of-bounds for the current widget size (e.g. folded at the bottom
+        // edge then unfolded — the saved Y stays at the folded-bottom Y).
+        // Restoring this on cancel keeps fold/unfold edge-anchoring intact.
+        _dragSavedX = originX;
+        _dragSavedY = originY;
+
+        // Clamp the math origin to current screen bounds. Without this the
+        // drag has a dead zone equal to the gap between saved and rendered Y
+        // before any visible movement happens.
+        if (screen) {
+            const maxX = Math.max(0, screen.width - widgetWidth);
+            const maxY = Math.max(0, screen.height - widgetHeight);
+            originX = Math.max(0, Math.min(originX, maxX));
+            originY = Math.max(0, Math.min(originY, maxY));
+        }
+
         _dragKey = key;
         _dragNormalized = normalized;
         _dragOriginX = originX;
         _dragOriginY = originY;
         _dragWriteX = originX;
         _dragWriteY = originY;
+        _dragWroteAnything = false;
     }
 
     function _dragMove(dx, dy) {
@@ -818,6 +840,31 @@ DesktopPluginComponent {
             x: writeX,
             y: writeY
         });
+        _dragWroteAnything = true;
+    }
+
+    function _dragEnd(cancelled) {
+        if (_dragKey === "") {
+            return;
+        }
+        // Snap back to the ORIGINAL saved position (not the clamped origin) so
+        // fold/unfold edge-anchoring is preserved — e.g. a sticky anchored at
+        // the bottom while folded must keep its saved Y past unfold+cancel.
+        // Only fire if we actually wrote during the drag; a pure click+release
+        // shouldn't re-write the same value.
+        if (cancelled && _dragWroteAnything) {
+            let writeX = _dragSavedX;
+            let writeY = _dragSavedY;
+            if (_dragNormalized && screen) {
+                writeX = _dragSavedX / screen.width;
+                writeY = _dragSavedY / screen.height;
+            }
+            SettingsData.updateDesktopWidgetInstancePosition(instanceId, _dragKey, {
+                x: writeX,
+                y: writeY
+            });
+        }
+        _dragKey = "";
     }
 
     function _newSticky(copyContent) {
